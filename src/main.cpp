@@ -10,7 +10,9 @@
 #include <WifiConfigOrFallbackAccesspointManager.h>
 #include <pinutils.h>
 
-using PixelRing_t = PixelRing<300, D3, NEO_GRB + NEO_KHZ400>;
+// TODO fix issue with 16 led angular view
+// TODO fix issue with color mode R/G/B: only 1st 16 leds follow the scene, not all
+using PixelRing_t = PixelRing<300, D3, NEO_GRB + NEO_KHZ800>;
 
 //----------------------------------------------------------------------------------------------
 
@@ -221,7 +223,7 @@ struct Ressources
 
     WebService http_service{ 80 };
 
-    Keyboard keyboard;
+    Keyboard keyboard{25, 50};
     KeyEventHandler event_handler{strip, operating_mode, lights_off_timer};
 
     // ---------------------------------------------------------------------------------------------
