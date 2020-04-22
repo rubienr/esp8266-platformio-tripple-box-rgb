@@ -1,8 +1,10 @@
 #include <Arduino.h>
 #include <Countdown.h>
+#include <DallasTemperature.h>
 #include <Display.h>
 #include <KeyEventReceiver.h>
 #include <Keyboard.h>
+#include <OneWire.h>
 #include <OperatingMode.h>
 #include <PixelRing.h>
 #include <StatusBar.h>
@@ -10,8 +12,8 @@
 #include <WifiConfigOrFallbackAccesspointManager.h>
 #include <pinutils.h>
 
-// TODO fix issue with 16 led angular view
-// TODO fix issue with color mode R/G/B: only 1st 16 leds follow the scene, not all
+//----------------------------------------------------------------------------------------------
+
 using PixelRing_t = PixelRing<300, D3, NEO_GRB + NEO_KHZ800>;
 
 //----------------------------------------------------------------------------------------------
@@ -20,51 +22,65 @@ class KeyEventHandler : public KeyEventReceiver
 {
     PixelRing_t &strip;
     OperatingMode &operating_mode;
-    Countdown &lights_off_timer;
-
 
 public:
-    explicit KeyEventHandler(PixelRing_t &pixel_ring, OperatingMode &operating_mode, Countdown &lights_off_timer)
-    : strip(pixel_ring), operating_mode(operating_mode), lights_off_timer(lights_off_timer)
+    // ---------------------------------------------------------------------------------------------
+
+    explicit KeyEventHandler(PixelRing_t &pixel_ring, OperatingMode &operating_mode)
+    : strip(pixel_ring), operating_mode(operating_mode)
     {
     }
 
+    // ---------------------------------------------------------------------------------------------
+
     bool take(KeyEvent e) override
     {
-        Serial.print("KeyEventHandler::take: key=");
+        /*Serial.print("KeyEventHandler::take: key=");
         Serial.print(std::underlying_type<KeyEvent::Key>::type(e.key));
         Serial.print(" type=");
         Serial.print(std::underlying_type<KeyEvent::Type>::type(e.type));
         Serial.print(" repeated=");
-        Serial.println(e.repeated);
+        Serial.println(e.repeated);*/
 
         bool consumed = false;
+        const uint16_t long_press = 10;
+        // const uint16_t extra_long_press = 5 * long_press;
 
-
-        // on double pressed
+        // on double stroke (double click alike)
         if(!consumed && e.type == KeyEvent::Type::DoublePressed)
         {
             switch(e.key)
             {
-            case KeyEvent::Key::Key1:
-            case KeyEvent::Key::Key3:
-            case KeyEvent::Key::Key4:
-            case KeyEvent::Key::Key5:
-            case KeyEvent::Key::Key6:
-            case KeyEvent::Key::Key7:
-                break;
             case KeyEvent::Key::Key0:
             case KeyEvent::Key::Key2:
             case KeyEvent::Key::Key8:
             case KeyEvent::Key::Key10:
-                Serial.println("max brightness");
                 strip.maxBrightness();
                 consumed = true;
                 break;
-            case KeyEvent::Key::Key9:
-            case KeyEvent::Key::Key11:
-                //ESP.restart();
+            case KeyEvent::Key::Key5:
+                strip.nextScene();
+                strip.on();
+                consumed = true;
                 break;
+            case KeyEvent::Key::Key3:
+                strip.incrementBrightness(3);
+                strip.on();
+                consumed = true;
+                break;
+            case KeyEvent::Key::Key7:
+                strip.incrementBrightness(-3);
+                strip.on();
+                consumed = true;
+                break;
+            case KeyEvent::Key::Key11:
+                strip.toggleOnOff();
+                consumed = true;
+                break;
+            case KeyEvent::Key::Key1:
+            case KeyEvent::Key::Key4:
+            case KeyEvent::Key::Key6:
+            case KeyEvent::Key::Key9:
             case KeyEvent::Key::None:
             case KeyEvent::Key::LastEnumeration:
                 break;
@@ -74,17 +90,15 @@ public:
         // on long or very long pressed
         if(!consumed && e.type == KeyEvent::Type::Repeated)
         {
-            const uint8_t long_press = 6;
-            //const uint8_t extra_long_press = 2 * long_press;
-
             switch(e.key)
             {
-            case KeyEvent::Key::Key1:
-            case KeyEvent::Key::Key3:
-            case KeyEvent::Key::Key4:
             case KeyEvent::Key::Key5:
-            case KeyEvent::Key::Key6:
-            case KeyEvent::Key::Key7:
+                if(e.repeated >= long_press)
+                {
+                    strip.process(PixelRing_t::SceneMode::Rainbow);
+                    strip.on();
+                    consumed = true;
+                }
                 break;
             case KeyEvent::Key::Key0:
             case KeyEvent::Key::Key2:
@@ -92,104 +106,117 @@ public:
             case KeyEvent::Key::Key10:
                 if(e.repeated >= long_press)
                 {
-                    Serial.println("full width");
                     strip.fullWidth();
                     strip.on();
                     consumed = true;
                 }
                 break;
-            case KeyEvent::Key::Key9:
             case KeyEvent::Key::Key11:
+            case KeyEvent::Key::Key1:
+            case KeyEvent::Key::Key3:
+            case KeyEvent::Key::Key4:
+            case KeyEvent::Key::Key6:
+            case KeyEvent::Key::Key7:
+            case KeyEvent::Key::Key9:
             case KeyEvent::Key::None:
             case KeyEvent::Key::LastEnumeration:
                 break;
             }
         }
 
-        if(!consumed && (e.type == KeyEvent::Type::Pressed || e.type == KeyEvent::Type::Repeated))
+        // on single keystroke
+        if(!consumed && e.type == KeyEvent::Type::Pressed)
         {
-            lights_off_timer.reset();
-
             switch(e.key)
             {
-            case KeyEvent::Key::Key8:
-                Serial.println("white");
-                strip.on();
-                strip.process(PixelRing_t::SceneMode::White);
-                consumed = true;
-                break;
             case KeyEvent::Key::Key0:
-                Serial.println("red");
+                strip.process(PixelRing_t::SceneMode::White);
                 strip.on();
-                strip.process(PixelRing_t::SceneMode::Red);
-                consumed = true;
-                break;
-            case KeyEvent::Key::Key10:
-                Serial.println("green");
-                strip.on();
-                strip.process(PixelRing_t::SceneMode::Green);
                 consumed = true;
                 break;
             case KeyEvent::Key::Key2:
-                Serial.println("blue");
+                strip.process(PixelRing_t::SceneMode::Red);
+                strip.on();
+                consumed = true;
+                break;
+            case KeyEvent::Key::Key8:
+                strip.process(PixelRing_t::SceneMode::Green);
+                strip.on();
+                consumed = true;
+                break;
+            case KeyEvent::Key::Key10:
                 strip.process(PixelRing_t::SceneMode::Blue);
                 strip.on();
                 consumed = true;
                 break;
-            case KeyEvent::Key::Key3:
-                Serial.println("++");
-                strip.incrementBrightness(20);
-                strip.on();
-                consumed = true;
-                break;
-            case KeyEvent::Key::Key7:
-                Serial.println("--");
-                strip.incrementBrightness(-20);
+            case KeyEvent::Key::Key5:
+                strip.nextScene();
                 strip.on();
                 consumed = true;
                 break;
             case KeyEvent::Key::Key11:
-                Serial.println("toggle on/off");
-                if(!strip.toggleOnOff())
-                {
-                    lights_off_timer.enable();
-                }
+                strip.toggleOnOff();
                 consumed = true;
                 break;
             case KeyEvent::Key::Key1:
-                Serial.println("shift++");
-                strip.shift(1);
-                strip.on();
-                consumed = true;
-                break;
+            case KeyEvent::Key::Key3:
+            case KeyEvent::Key::Key7:
             case KeyEvent::Key::Key9:
-                Serial.println("shift--");
-                strip.shift(-1);
-                strip.on();
-                consumed = true;
-                break;
-            case KeyEvent::Key::Key4:
-                Serial.println("width++");
-                strip.incrementWidth(1);
-                strip.on();
-                consumed = true;
-                break;
             case KeyEvent::Key::Key6:
-                Serial.println("width--");
-                strip.incrementWidth(-1);
-                strip.on();
-                consumed = true;
-                break;
-            case KeyEvent::Key::Key5:
-                Serial.println("next scene");
-                strip.nextScene();
-                strip.on();
-                break;
+            case KeyEvent::Key::Key4:
             case KeyEvent::Key::None:
             case KeyEvent::Key::LastEnumeration:
                 break;
             }
         }
+
+        // on pressed or repeated
+        if(!consumed && (e.type == KeyEvent::Type::Pressed || e.type == KeyEvent::Type::Repeated))
+        {
+            switch(e.key)
+            {
+            case KeyEvent::Key::Key3:
+                strip.incrementBrightness(3);
+                strip.on();
+                consumed = true;
+                break;
+            case KeyEvent::Key::Key7:
+                strip.incrementBrightness(-3);
+                strip.on();
+                consumed = true;
+                break;
+            case KeyEvent::Key::Key1:
+                strip.incrementWidth(4);
+                strip.on();
+                consumed = true;
+                break;
+            case KeyEvent::Key::Key9:
+                strip.incrementWidth(-4);
+                strip.on();
+                consumed = true;
+                break;
+            case KeyEvent::Key::Key6:
+                strip.shift(-4);
+                strip.on();
+                consumed = true;
+                break;
+            case KeyEvent::Key::Key4:
+                strip.shift(4);
+                strip.on();
+                consumed = true;
+                break;
+            case KeyEvent::Key::Key0:
+            case KeyEvent::Key::Key2:
+            case KeyEvent::Key::Key5:
+            case KeyEvent::Key::Key8:
+            case KeyEvent::Key::Key10:
+            case KeyEvent::Key::Key11:
+            case KeyEvent::Key::None:
+            case KeyEvent::Key::LastEnumeration:
+                break;
+            }
+        }
+
         return consumed;
     }
 };
@@ -209,13 +236,20 @@ struct Ressources
                 delay(10);
             Serial.print("\n\n\n");
             Serial.println("Setup::setup");
+
+            wifi_status_led_uninstall();
+            pinMode(LED_BUILTIN, OUTPUT);
+            digitalWrite(LED_BUILTIN, HIGH);
         }
     } __;
 
     // ---------------------------------------------------------------------------------------------
 
     Countdown lights_off_timer{ 60 * 60 * 6 };
-    OperatingMode operating_mode;
+    Countdown display_off_timer{ 60 * 30 };
+    Countdown temperature_refresh_timer{ 30 };
+
+    OperatingMode operating_mode{OperatingMode::Mode::Wifi};
     PixelRing_t strip;
 
     Display display;
@@ -223,8 +257,20 @@ struct Ressources
 
     WebService http_service{ 80 };
 
-    Keyboard keyboard{25, 50};
-    KeyEventHandler event_handler{strip, operating_mode, lights_off_timer};
+    Keyboard keyboard{ 5, 250 };
+    KeyEventHandler event_handler{ strip, operating_mode };
+
+    Countdown::Callback_t on_display_off = [this]() { this->displayOff(); };
+    Countdown::Callback_t on_lights_off = [this]() { this->lightsOff(); };
+    Countdown::Callback_t on_temperature_refresh = [this]() {
+        measureTemperature();
+        status_bar.data.temperature_celsius = getTemperature();
+        temperature_refresh_timer.reset();
+    };
+
+    OneWire ow{ D4 };
+    DallasTemperature temp_sensors{ &ow };
+    uint8_t temperature_sensor_address{ 0xff };
 
     // ---------------------------------------------------------------------------------------------
 
@@ -232,12 +278,16 @@ struct Ressources
     {
         strip.setup();
 
+        display_off_timer.disable();
+        display_off_timer.reset();
         lights_off_timer.disable();
         lights_off_timer.reset();
+        temperature_refresh_timer.disable();
+        temperature_refresh_timer.reset();
 
         display.setup();
+        display.dim(false);
         display.reset();
-        status_bar.update();
 
         display.printf("keyboard ");
         if(keyboard.setup(&event_handler, 0x5B)) // short GND to 1 on the kbd. board
@@ -252,14 +302,60 @@ struct Ressources
         http_service.setup();
 
         lights_off_timer.enable();
+        display_off_timer.enable();
+        temperature_refresh_timer.enable();
+
+        temp_sensors.begin();
+        temp_sensors.getAddress(&temperature_sensor_address, 0);
+        status_bar.data.enable_temperature = true;
+        measureTemperature();
+        status_bar.data.temperature_celsius = getTemperature();
+        status_bar.update();
+    }
+
+    // ---------------------------------------------------------------------------------------------
+
+    void measureTemperature()
+    {
+        temp_sensors.requestTemperaturesByAddress(&temperature_sensor_address);
+        digitalWrite(LED_BUILTIN, HIGH);
+    }
+
+    // ---------------------------------------------------------------------------------------------
+
+    float getTemperature()
+    {
+        float temperature = temp_sensors.getTempC(&temperature_sensor_address);
+        digitalWrite(LED_BUILTIN, HIGH);
+        return temperature;
+    }
+
+    // ---------------------------------------------------------------------------------------------
+
+    void displayOff()
+    {
+        Serial.println("Ressources::displayOff");
+        ;
+        display.off();
+        display_off_timer.reset();
+    }
+
+    // ---------------------------------------------------------------------------------------------
+
+    void displayOn()
+    {
+        Serial.println("Ressources::displayOn");
+        display.on();
+        display_off_timer.reset();
     }
 
     // ---------------------------------------------------------------------------------------------
 
     void lightsOff()
     {
-        Serial.println("Ressources::onTimeout");
+        Serial.println("Ressources::lightsOff");
         strip.off();
+        lights_off_timer.reset();
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -268,9 +364,17 @@ struct Ressources
     {
         strip.process();
         status_bar.update();
-        keyboard.process();
+        if(keyboard.process())
+        {
+            displayOn();
+            display_off_timer.reset();
+            lights_off_timer.reset();
+        }
         http_service.process();
-        lights_off_timer.process([this]() { this->lightsOff(); });
+
+        display_off_timer.process(on_display_off);
+        lights_off_timer.process(on_lights_off);
+        temperature_refresh_timer.process(on_temperature_refresh);
     }
 } r;
 
